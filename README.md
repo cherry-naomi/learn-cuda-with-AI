@@ -19,16 +19,18 @@
 ### 🎯 代码库结构
 ```bash
 cuda_examples/
-├── vector_add.cu                    # 基础 vector add
-├── vector_add_optimized.cu          # 性能优化版本
-├── cuda_threading_explained.cu     # 线程模型详解
-├── hardware_mapping_explained.cu   # 硬件映射解析
-├── shared_memory_explained.cu      # 共享内存示例
-├── block_isolation_demo.cu         # Block 隔离演示
-├── insufficient_threads_demo.cu    # 线程不足问题演示
-├── block_essence_chinese.cu        # Block 本质解析（中文）
-├── Makefile                         # 编译配置
-└── *.md                            # 详细文档
+├── src/vector_add/
+│   ├── vector_add.cu                    # 基础 vector add
+│   ├── vector_add_optimized.cu          # 性能优化版本
+│   ├── cuda_threading_explained.cu     # 线程模型详解
+│   ├── hardware_mapping_explained.cu   # 硬件映射解析
+│   ├── shared_memory_explained.cu      # 共享内存示例
+│   ├── block_isolation_demo.cu         # Block 隔离演示
+│   ├── insufficient_threads_demo.cu    # 线程不足问题演示
+│   ├── block_essence_chinese.cu        # Block 本质解析（中文）
+│   └── *.md                            # 详细文档
+├── Makefile                             # 编译配置
+└── README.md                           # 项目说明
 ```
 
 ### 🛠️ 快速开始

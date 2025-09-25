@@ -1,0 +1,71 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Default Configuration",
+            "description": "Default build configuration with Release mode",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CUDA_ARCHITECTURES": "50;60;70;75;80;86"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug Configuration",
+            "description": "Debug build with device debugging enabled",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CUDA_ARCHITECTURES": "50;60;70;75;80;86"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release Configuration",
+            "description": "Optimized release build",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CUDA_ARCHITECTURES": "50;60;70;75;80;86"
+            }
+        },
+        {
+            "name": "sm80-only",
+            "displayName": "SM80 Only",
+            "description": "Build only for Ampere architecture (SM 80)",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-sm80",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CUDA_ARCHITECTURES": "80"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "configurePreset": "default",
+            "displayName": "Default Build"
+        },
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "displayName": "Debug Build"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "displayName": "Release Build"
+        },
+        {
+            "name": "sm80-only",
+            "configurePreset": "sm80-only",
+            "displayName": "SM80 Only Build"
+        }
+    ]
+}

@@ -16,20 +16,26 @@ TARGET6 = block_isolation_demo
 TARGET7 = vector_add_optimized
 TARGET8 = insufficient_threads_demo
 TARGET9 = block_essence_chinese
+TARGET10 = softmax_basic
+TARGET11 = softmax_optimized
+TARGET12 = softmax_unittest
 
 # Source files
-SOURCES1 = vector_add/vector_add.cu
-SOURCES2 = vector_add/vector_add_2d.cu
-SOURCES3 = cuda_threading_explained.cu
-SOURCES4 = hardware_mapping_explained.cu
-SOURCES5 = shared_memory_explained.cu
-SOURCES6 = block_isolation_demo.cu
-SOURCES7 = vector_add_optimized.cu
-SOURCES8 = insufficient_threads_demo.cu
-SOURCES9 = block_essence_chinese.cu
+SOURCES1 = src/vector_add/vector_add.cu
+SOURCES2 = src/vector_add/vector_add_2d.cu
+SOURCES3 = src/vector_add/cuda_threading_explained.cu
+SOURCES4 = src/vector_add/hardware_mapping_explained.cu
+SOURCES5 = src/vector_add/shared_memory_explained.cu
+SOURCES6 = src/vector_add/block_isolation_demo.cu
+SOURCES7 = src/vector_add/vector_add_optimized.cu
+SOURCES8 = src/vector_add/insufficient_threads_demo.cu
+SOURCES9 = src/vector_add/block_essence_chinese.cu
+SOURCES10 = src/softmax/softmax_basic.cu
+SOURCES11 = src/softmax/softmax_optimized.cu
+SOURCES12 = src/softmax/softmax_unittest.cu
 
 # Default target - build all examples
-all: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) $(TARGET8) $(TARGET9)
+all: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) $(TARGET8) $(TARGET9) $(TARGET10) $(TARGET11) $(TARGET12)
 
 # Build the basic vector addition example
 $(TARGET1): $(SOURCES1)
@@ -67,9 +73,21 @@ $(TARGET8): $(SOURCES8)
 $(TARGET9): $(SOURCES9)
 	$(NVCC) $(NVCCFLAGS) -o $(TARGET9) $(SOURCES9)
 
+# Build the basic softmax implementation
+$(TARGET10): $(SOURCES10)
+	$(NVCC) $(NVCCFLAGS) -o $(TARGET10) $(SOURCES10)
+
+# Build the optimized softmax implementation
+$(TARGET11): $(SOURCES11)
+	$(NVCC) $(NVCCFLAGS) -o $(TARGET11) $(SOURCES11)
+
+# Build the softmax unit tests
+$(TARGET12): $(SOURCES12)
+	$(NVCC) $(NVCCFLAGS) -o $(TARGET12) $(SOURCES12)
+
 # Clean up generated files
 clean:
-	rm -f $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) $(TARGET8) $(TARGET9)
+	rm -f $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) $(TARGET8) $(TARGET9) $(TARGET10) $(TARGET11) $(TARGET12)
 
 # Run the basic example
 run1: $(TARGET1)
@@ -107,12 +125,27 @@ run8: $(TARGET8)
 run9: $(TARGET9)
 	./$(TARGET9)
 
+# Run the basic softmax implementation
+run10: $(TARGET10)
+	./$(TARGET10)
+
+# Run the optimized softmax implementation
+run11: $(TARGET11)
+	./$(TARGET11)
+
+# Run the softmax unit tests
+test: $(TARGET12)
+	./$(TARGET12)
+
+# Alias for unit tests
+run12: test
+
 # Run profiling analysis
 profile: $(TARGET1) $(TARGET7)
-	./profile_vector_add.sh
+	./src/vector_add/profile_vector_add.sh
 
 # Run all examples
-run: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) $(TARGET8) $(TARGET9)
+run: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7) $(TARGET8) $(TARGET9) $(TARGET10) $(TARGET11) $(TARGET12)
 	@echo "=== Running Threading Explanation (Educational) ==="
 	./$(TARGET3)
 	@echo ""
@@ -139,6 +172,15 @@ run: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7
 	@echo ""
 	@echo "=== Running 2D Grid Configuration Example ==="
 	./$(TARGET2)
+	@echo ""
+	@echo "=== Running Basic Softmax Implementation ==="
+	./$(TARGET10)
+	@echo ""
+	@echo "=== Running Optimized Softmax Implementation ==="
+	./$(TARGET11)
+	@echo ""
+	@echo "=== Running Softmax Unit Tests ==="
+	./$(TARGET12)
 
 # Help target
 help:
@@ -153,6 +195,9 @@ help:
 	@echo "  $(TARGET7) - Build optimized vector addition"
 	@echo "  $(TARGET8) - Build insufficient threads demo"
 	@echo "  $(TARGET9) - Build block essence explanation (Chinese)"
+	@echo "  $(TARGET10) - Build basic softmax implementation"
+	@echo "  $(TARGET11) - Build optimized softmax implementation"
+	@echo "  $(TARGET12) - Build softmax unit tests"
 	@echo "  clean   - Remove generated files"
 	@echo "  run     - Build and run all examples"
 	@echo "  run1    - Run basic example"
@@ -164,10 +209,15 @@ help:
 	@echo "  run7    - Run performance analysis (OPTIMIZE!)"
 	@echo "  run8    - Run insufficient threads (COVERAGE!)"
 	@echo "  run9    - Run block essence (ESSENCE! 中文)"
+	@echo "  run10   - Run basic softmax (SOFTMAX BASICS!)"
+	@echo "  run11   - Run optimized softmax (ADVANCED SOFTMAX!)"
+	@echo "  test    - Run softmax unit tests (TRANSFORMER TESTS!)"
+	@echo "  run12   - Alias for test"
 	@echo "  profile - Run comprehensive profiling"
 	@echo "  help    - Show this help message"
 	@echo ""
 	@echo "Learning: run3 → run4 → run5 → run6 → run9 → run8 → run1 → run2"
+	@echo "Softmax: run10 → run11 → test"
 	@echo "Performance: run7 → profile"
 
-.PHONY: all clean run run1 run2 run3 run4 run5 run6 run7 run8 run9 profile help
+.PHONY: all clean run run1 run2 run3 run4 run5 run6 run7 run8 run9 run10 run11 run12 test profile help
