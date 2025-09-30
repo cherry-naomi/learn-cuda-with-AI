@@ -56,4 +56,7 @@ void benchmark_configurations(void (*kernel)(float*, float*, int, int),
                              const GPUInfo& gpu_info);
 bool verify_results(const float* gpu_result, const float* cpu_result, size_t total_elements, float tolerance = 1e-5f);
 
+// SFU utilization calculation
+float calculate_sfu_utilization(int batch_size, int dim, float gpu_time_ms, const GPUInfo& gpu_info);
+
 #endif // PERF_H

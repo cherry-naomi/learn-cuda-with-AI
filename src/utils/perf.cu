@@ -351,3 +351,32 @@ bool verify_results(const float* gpu_result, const float* cpu_result, size_t tot
     return true;
 }
 
+// Function to calculate SFU utilization
+float calculate_sfu_utilization(int batch_size, int dim, float gpu_time_ms, const GPUInfo& gpu_info) {
+    // Calculate total exp operations
+    // Each element requires 2 exp operations: one for sum calculation, one for final result
+    size_t total_exp_operations = batch_size * dim * 2;
+    
+    // Convert GPU time to seconds
+    float gpu_time_seconds = gpu_time_ms / 1000.0f;
+    
+    // Calculate exp operations per second
+    float exp_ops_per_second = total_exp_operations / gpu_time_seconds;
+    
+    // A100 SFU theoretical peak (based on official specs)
+    // A100 has 108 SMs, each SM has 16 SFU units
+    // Each SFU produces 16 results per clock cycle
+    // A100 base clock is ~1.4 GHz
+    float peak_sfu_throughput = 108 * 16 * 1.4e9f; // ops per second
+    
+    // Calculate SFU utilization
+    float sfu_utilization = (exp_ops_per_second / peak_sfu_throughput) * 100.0f;
+    
+    // Cap at 100% (theoretical maximum)
+    if (sfu_utilization > 100.0f) {
+        sfu_utilization = 100.0f;
+    }
+    
+    return sfu_utilization;
+}
+

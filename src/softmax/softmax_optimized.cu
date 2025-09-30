@@ -11,6 +11,21 @@
 
 using namespace cooperative_groups;
 
+// Data structure for storing test results
+struct TestResult {
+    int dim;
+    float gpu_time_ms;
+    float cpu_time_ms;
+    float speedup;
+    float memory_bandwidth_gb_s;
+    float memory_utilization_percent;
+    float compute_utilization_percent;
+    float sfu_utilization_percent;
+    float exp_operations_per_second;
+    size_t memory_size_mb;
+    const char* kernel_name;
+};
+
 #define CUDA_CHECK(call) \
     do { \
         cudaError_t error = call; \
@@ -188,7 +203,7 @@ __global__ void softmax_warp_primitives_multi(float *input, float *output, int b
     // Phase 2: Compute sum using warp shuffle
     float thread_sum = 0.0f;
     for (int i = tid; i < dim; i += blockDim.x) {
-        thread_sum += expf(row_input[i] - warp_max);
+        thread_sum += __expf(row_input[i] - warp_max);
     }
     
     // Warp-level reduction for sum
@@ -234,7 +249,7 @@ __global__ void softmax_warp_primitives_multi(float *input, float *output, int b
     }
 }
 
-// Single-pass fused softmax kernel (most efficient)
+// Single-pass Online softmax kernel (most efficient)
 __global__ void softmax_fused(float *input, float *output, int batch_size, int dim) {
     auto block = this_thread_block();
     int batch_idx = blockIdx.x;
@@ -314,32 +329,95 @@ void softmax_cpu(const float* input, float* output, int batch_size, int dim) {
     }
 }
 
-int main() {
-    printf("=== CUDA Softmax Optimized Implementation with Performance Analysis ===\n\n");
+// Print performance summary table
+void print_performance_summary(const std::vector<TestResult>& results, const GPUInfo& gpu_info) {
+    printf("\n========================================================================================================================\n");
+    printf("PERFORMANCE SUMMARY TABLE\n");
+    printf("========================================================================================================================\n");
+    printf("GPU: %s | Peak Bandwidth: %.1f GB/s | Peak Compute: %.1f TFLOPS\n", 
+           gpu_info.name, gpu_info.peak_memory_bandwidth_gb_s, gpu_info.peak_compute_throughput_tflops);
+    printf("========================================================================================================================\n");
     
-    // Get GPU information using the new utility function
-    GPUInfo gpu_info = get_gpu_info();
-    printf("🖥️  GPU Information:\n");
-    printf("  Device: %s\n", gpu_info.name);
-    printf("  Compute Capability: %d.%d\n", gpu_info.compute_capability_major, gpu_info.compute_capability_minor);
-    printf("  SMs: %d\n", gpu_info.multiprocessor_count);
-    printf("  Memory: %.2f GB\n", gpu_info.total_memory / (1024.0f * 1024.0f * 1024.0f));
-    printf("  Peak Memory Bandwidth: %.2f GB/s\n", gpu_info.peak_memory_bandwidth_gb_s);
-    printf("  Peak Compute Throughput: %.2f TFLOPS\n", gpu_info.peak_compute_throughput_tflops);
-    printf("  Warp Size: %d\n", gpu_info.warp_size);
-    printf("\n");
+    // Header
+    printf("%-35s %-8s %-12s %-12s %-12s %-12s %-12s %-12s %-12s %-12s\n",
+           "Kernel", "Dim", "GPU(ms)", "CPU(ms)", "Speedup", "MemBW(GB/s)", "MemUtil(%)", "CompUtil(%)", "SFUUtil(%)", "MemSize(MB)");
+    printf("------------------------------------------------------------------------------------------------------------------------------------\n");
     
-    // Main configuration test
-    const int batch_size = 49152;
-    const int dim = 1024;
+    // Data rows
+    for (const auto& result : results) {
+        printf("%-35s %-8d %-12.4f %-12.4f %-12.1f %-12.1f %-12.1f %-12.1f %-12.1f %-12zu\n",
+               result.kernel_name, result.dim, result.gpu_time_ms, result.cpu_time_ms, 
+               result.speedup, result.memory_bandwidth_gb_s, result.memory_utilization_percent,
+               result.compute_utilization_percent, result.sfu_utilization_percent, result.memory_size_mb);
+    }
+    
+    printf("========================================================================================================================\n");
+    
+    // Analysis
+    printf("\n📊 PERFORMANCE ANALYSIS:\n");
+    printf("1. Memory Bandwidth Utilization:\n");
+    for (const auto& result : results) {
+        printf("   %s (dim=%d): %.1f%% - %s\n", result.kernel_name, result.dim, result.memory_utilization_percent,
+               result.memory_utilization_percent > 50 ? "🟢 Good" : 
+               result.memory_utilization_percent > 25 ? "🟡 Moderate" : "🔴 Needs optimization");
+    }
+    
+    printf("\n2. Speedup Comparison:\n");
+    for (const auto& result : results) {
+        printf("   %s (dim=%d): %.1fx - %s\n", result.kernel_name, result.dim, result.speedup,
+               result.speedup > 1000 ? "🟢 Excellent" : 
+               result.speedup > 100 ? "🟡 Good" : "🔴 Needs improvement");
+    }
+    
+    printf("\n3. Memory Efficiency:\n");
+    for (const auto& result : results) {
+        printf("   %s (dim=%d): %zu MB - %s\n", result.kernel_name, result.dim, result.memory_size_mb,
+               result.memory_size_mb < 1000 ? "🟢 Efficient" : 
+               result.memory_size_mb < 5000 ? "🟡 Moderate" : "🔴 High memory usage");
+    }
+    
+    printf("\n4. SFU Utilization Analysis:\n");
+    for (const auto& result : results) {
+        printf("   %s (dim=%d): %.1f%% - %s\n", result.kernel_name, result.dim, result.sfu_utilization_percent,
+               result.sfu_utilization_percent > 20 ? "🟢 High SFU usage" : 
+               result.sfu_utilization_percent > 10 ? "🟡 Moderate SFU usage" : "🔴 Low SFU usage");
+    }
+    
+    printf("\n5. Kernel Performance Ranking (by speedup):\n");
+    std::vector<TestResult> sorted_results = results;
+    std::sort(sorted_results.begin(), sorted_results.end(), 
+              [](const TestResult& a, const TestResult& b) { return a.speedup > b.speedup; });
+    
+    for (size_t i = 0; i < sorted_results.size(); i++) {
+        printf("   %zu. %s (dim=%d): %.1fx\n", i + 1, sorted_results[i].kernel_name, 
+               sorted_results[i].dim, sorted_results[i].speedup);
+    }
+}
+
+// Function to run a single test case
+void run_test_case(int test_idx, int batch_size, int dim, const GPUInfo& gpu_info, std::vector<TestResult>* results = nullptr) {
     const size_t total_elements = batch_size * dim;
     const size_t bytes = total_elements * sizeof(float);
     
+    printf("=== Test Case %d: Dim=%d ===\n", test_idx + 1, dim);
     printf("Configuration:\n");
     printf("  Batch size: %d\n", batch_size);
     printf("  Dimension: %d\n", dim);
     printf("  Total elements: %zu\n", total_elements);
-    printf("  Memory size: %.2f MB\n\n", bytes / (1024.0f * 1024.0f));
+    printf("  Memory size: %.2f MB\n", bytes / (1024.0f * 1024.0f));
+    
+    // Check memory requirements
+    size_t required_memory_gb = bytes / (1024.0f * 1024.0f * 1024.0f);
+    size_t available_memory_gb = gpu_info.total_memory / (1024.0f * 1024.0f * 1024.0f);
+    
+    if (required_memory_gb > available_memory_gb * 0.8) {  // Use 80% of available memory as safety margin
+        printf("  ⚠️  Skipping test case - memory requirement (%.2f GB) exceeds safe limit (%.2f GB)\n\n", 
+               required_memory_gb, available_memory_gb * 0.8);
+        return;
+    }
+    
+    printf("  Memory usage: %.2f GB / %.2f GB (%.1f%%)\n\n", 
+           required_memory_gb, available_memory_gb, (required_memory_gb / available_memory_gb) * 100.0f);
     
     // Allocate host memory
     float *h_input = (float*)malloc(bytes);
@@ -359,7 +437,7 @@ int main() {
     // Copy input data to device
     CUDA_CHECK(cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice));
     
-    // CPU reference using the new utility function
+    // CPU reference
     auto cpu_start = std::chrono::high_resolution_clock::now();
     softmax_cpu(h_input, h_output_cpu, batch_size, dim);
     auto cpu_end = std::chrono::high_resolution_clock::now();
@@ -396,13 +474,36 @@ int main() {
     } else {
         printf("Verification:\n");
         printf("  ❌ Results don't match! GPU implementation has errors.\n\n");
-        return 1;
+        // Cleanup and return
+        free(h_input);
+        free(h_output_gpu);
+        free(h_output_cpu);
+        CUDA_CHECK(cudaFree(d_input));
+        CUDA_CHECK(cudaFree(d_output));
+        return;
     }
     
     // Calculate and display performance metrics using the new utility function
-    PerformanceMetrics metrics = calculate_metrics("Softmax Optimized", gpu_time, cpu_time, total_elements, dim,
+    PerformanceMetrics metrics = calculate_metrics("Shared memory only", gpu_time, cpu_time, total_elements, dim,
                                                   threads_per_block, blocks_per_grid, gpu_info);
     print_performance_analysis(metrics, gpu_info);
+    
+    // Store results for summary
+    if (results) {
+        TestResult result;
+        result.dim = dim;
+        result.gpu_time_ms = gpu_time;
+        result.cpu_time_ms = cpu_time;
+        result.speedup = metrics.speedup;
+        result.memory_bandwidth_gb_s = metrics.memory_bandwidth_gb_s;
+        result.memory_utilization_percent = metrics.memory_utilization_percent;
+        result.compute_utilization_percent = metrics.compute_utilization_percent;
+        result.sfu_utilization_percent = calculate_sfu_utilization(batch_size, dim, gpu_time, gpu_info);
+        result.exp_operations_per_second = (batch_size * dim * 2) / (gpu_time / 1000.0f);
+        result.memory_size_mb = bytes / (1024 * 1024);
+        result.kernel_name = "Shared memory only";
+        results->push_back(result);
+    }
     
     // Test other optimized kernels for comparison
     printf("\n=== Kernel Comparison ===\n");
@@ -415,7 +516,7 @@ int main() {
         float warp_time = measure_kernel_ms(softmax_warp_primitives, d_input, d_output, 
                                           blocks_per_grid, warp_threads, 0,
                                           batch_size, dim);
-        PerformanceMetrics warp_metrics = calculate_metrics("Warp Primitives (Single)", warp_time, cpu_time, total_elements, dim,
+        PerformanceMetrics warp_metrics = calculate_metrics("Warp Primitives only", warp_time, cpu_time, total_elements, dim,
                                                           warp_threads, blocks_per_grid, gpu_info);
         print_performance_analysis(warp_metrics, gpu_info);
         
@@ -424,9 +525,26 @@ int main() {
         
         // Verify results
         if (verify_results(h_output_gpu, h_output_cpu, total_elements)) {
-            printf("Warp Primitives (Single): ✅ Correct, Time: %.4f ms\n", warp_time);
+            printf("Warp Primitives only: ✅ Correct, Time: %.4f ms\n", warp_time);
         } else {
-            printf("Warp Primitives (Single): ❌ Incorrect results\n");
+            printf("Warp Primitives only: ❌ Incorrect results\n");
+        }
+        
+        // Store results for summary
+        if (results) {
+            TestResult result;
+            result.dim = dim;
+            result.gpu_time_ms = warp_time;
+            result.cpu_time_ms = cpu_time;
+            result.speedup = warp_metrics.speedup;
+            result.memory_bandwidth_gb_s = warp_metrics.memory_bandwidth_gb_s;
+            result.memory_utilization_percent = warp_metrics.memory_utilization_percent;
+            result.compute_utilization_percent = warp_metrics.compute_utilization_percent;
+            result.sfu_utilization_percent = calculate_sfu_utilization(batch_size, dim, warp_time, gpu_info);
+            result.exp_operations_per_second = (batch_size * dim * 2) / (warp_time / 1000.0f);
+            result.memory_size_mb = bytes / (1024 * 1024);
+            result.kernel_name = "Warp Primitives only";
+            results->push_back(result);
         }
     }
     
@@ -439,7 +557,7 @@ int main() {
         float multi_warp_time = measure_kernel_ms(softmax_warp_primitives_multi, d_input, d_output, 
                                                 blocks_per_grid, multi_warp_threads, multi_warp_shared_mem,
                                                 batch_size, dim);
-        PerformanceMetrics multi_warp_metrics = calculate_metrics("Warp Primitives (Multi)", multi_warp_time, cpu_time, total_elements, dim,
+        PerformanceMetrics multi_warp_metrics = calculate_metrics("Warp Primitives + Shard memory", multi_warp_time, cpu_time, total_elements, dim,
                                                                 multi_warp_threads, blocks_per_grid, gpu_info);
         print_performance_analysis(multi_warp_metrics, gpu_info);
         
@@ -448,33 +566,64 @@ int main() {
         
         // Verify results
         if (verify_results(h_output_gpu, h_output_cpu, total_elements)) {
-            printf("Warp Primitives (Multi): ✅ Correct, Time: %.4f ms\n", multi_warp_time);
+            printf("Warp Primitives + Shard memory: ✅ Correct, Time: %.4f ms\n", multi_warp_time);
         } else {
-            printf("Warp Primitives (Multi): ❌ Incorrect results\n");
+            printf("Warp Primitives + Shard memory: ❌ Incorrect results\n");
+        }
+        
+        // Store results for summary
+        if (results) {
+            TestResult result;
+            result.dim = dim;
+            result.gpu_time_ms = multi_warp_time;
+            result.cpu_time_ms = cpu_time;
+            result.speedup = multi_warp_metrics.speedup;
+            result.memory_bandwidth_gb_s = multi_warp_metrics.memory_bandwidth_gb_s;
+            result.memory_utilization_percent = multi_warp_metrics.memory_utilization_percent;
+            result.compute_utilization_percent = multi_warp_metrics.compute_utilization_percent;
+            result.sfu_utilization_percent = calculate_sfu_utilization(batch_size, dim, multi_warp_time, gpu_info);
+            result.exp_operations_per_second = (batch_size * dim * 2) / (multi_warp_time / 1000.0f);
+            result.memory_size_mb = bytes / (1024 * 1024);
+            result.kernel_name = "Warp Primitives + Shard memory";
+            results->push_back(result);
         }
     }
     
-    // // 3. Fused version
-    // size_t fused_shared_mem = threads_per_block * 2 * sizeof(float); // max + sum
-    // float fused_time = measure_kernel_ms(softmax_fused, d_input, d_output, 
-    //                                    blocks_per_grid, threads_per_block, fused_shared_mem,
-    //                                    batch_size, dim);
-    // metrics = calculate_metrics("Fused Softmax", fused_time, cpu_time, total_elements, dim,
-    //                                                 threads_per_block, blocks_per_grid, gpu_info);
-    // print_performance_analysis(metrics, gpu_info);                                           
+    // 4. Fused version
+    size_t fused_shared_mem = threads_per_block * 2 * sizeof(float); // max + sum
+    float fused_time = measure_kernel_ms(softmax_fused, d_input, d_output, 
+                                       blocks_per_grid, threads_per_block, fused_shared_mem,
+                                       batch_size, dim);
+    metrics = calculate_metrics("Online softmax", fused_time, cpu_time, total_elements, dim,
+                                                 threads_per_block, blocks_per_grid, gpu_info);
+    print_performance_analysis(metrics, gpu_info);                                           
     
-    // // Copy result back to host
-    // CUDA_CHECK(cudaMemcpy(h_output_gpu, d_output, bytes, cudaMemcpyDeviceToHost));
+    // Copy result back to host
+    CUDA_CHECK(cudaMemcpy(h_output_gpu, d_output, bytes, cudaMemcpyDeviceToHost));
     
-    // // Verify results
-    // if (verify_results(h_output_gpu, h_output_cpu, total_elements)) {
-    //     printf("Fused: ✅ Correct, Time: %.4f ms\n", fused_time);
-    // } else {
-    //     printf("Fused: ❌ Incorrect results\n");
-    // }
+    // Verify results
+    if (verify_results(h_output_gpu, h_output_cpu, total_elements)) {
+        printf("Fused: ✅ Correct, Time: %.4f ms\n", fused_time);
+    } else {
+        printf("Fused: ❌ Incorrect results\n");
+    }
     
-    // Run benchmark configurations using the new utility function
-    // benchmark_configurations(softmax_optimized, gpu_info);
+    // Store results for summary
+    if (results) {
+        TestResult result;
+        result.dim = dim;
+        result.gpu_time_ms = fused_time;
+        result.cpu_time_ms = cpu_time;
+        result.speedup = metrics.speedup;
+        result.memory_bandwidth_gb_s = metrics.memory_bandwidth_gb_s;
+        result.memory_utilization_percent = metrics.memory_utilization_percent;
+        result.compute_utilization_percent = metrics.compute_utilization_percent;
+        result.sfu_utilization_percent = calculate_sfu_utilization(batch_size, dim, fused_time, gpu_info);
+        result.exp_operations_per_second = (batch_size * dim * 2) / (fused_time / 1000.0f);
+        result.memory_size_mb = bytes / (1024 * 1024);
+        result.kernel_name = "Online softmax";
+        results->push_back(result);
+    }
     
     // Cleanup
     free(h_input);
@@ -483,6 +632,61 @@ int main() {
     CUDA_CHECK(cudaFree(d_input));
     CUDA_CHECK(cudaFree(d_output));
     
-    printf("\n=== Performance Analysis Complete ===\n");
+    printf("\n=== Test Case %d Complete ===\n\n", test_idx + 1);
+}
+
+int main() {
+    printf("=== CUDA Shared memory only Implementation with Performance Analysis ===\n\n");
+    
+    // Get GPU information using the new utility function
+    GPUInfo gpu_info = get_gpu_info();
+    printf("🖥️  GPU Information:\n");
+    printf("  Device: %s\n", gpu_info.name);
+    printf("  Compute Capability: %d.%d\n", gpu_info.compute_capability_major, gpu_info.compute_capability_minor);
+    printf("  SMs: %d\n", gpu_info.multiprocessor_count);
+    printf("  Memory: %.2f GB\n", gpu_info.total_memory / (1024.0f * 1024.0f * 1024.0f));
+    printf("  Peak Memory Bandwidth: %.2f GB/s\n", gpu_info.peak_memory_bandwidth_gb_s);
+    printf("  Peak Compute Throughput: %.2f TFLOPS\n", gpu_info.peak_compute_throughput_tflops);
+    printf("  Warp Size: %d\n", gpu_info.warp_size);
+    printf("\n");
+    
+    // Test configurations: batch_size=49152, dim=[128, 1024, 16384]
+    // Note: dim=65536 would require ~12GB memory, which exceeds GPU capacity
+    const int batch_size = 49152;
+    const int test_dims[] = {128, 1024, 16384};
+    const int num_tests = sizeof(test_dims) / sizeof(test_dims[0]);
+    
+    // Performance data storage
+    std::vector<TestResult> results;
+    
+    printf("=== Running %d Test Cases ===\n", num_tests);
+    printf("Batch size: %d (fixed)\n", batch_size);
+    printf("Dimensions: [128, 1024, 16384]\n");
+    printf("Kernels: [Shared memory only, Warp Primitives only, Warp Primitives + Shard memory, Online softmax]\n\n");
+    
+    for (int test_idx = 0; test_idx < num_tests; test_idx++) {
+        run_test_case(test_idx, batch_size, test_dims[test_idx], gpu_info, &results);
+    }
+    
+    // Print performance summary table
+    print_performance_summary(results, gpu_info);
+    
+    printf("\n=== Educational Notes ===\n");
+    printf("🎯 Softmax Formula: softmax(x_i) = exp(x_i - max(x)) / Σ(exp(x_j - max(x)))\n");
+    printf("🔑 Key Points:\n");
+    printf("  • Shared Memory: Uses block-level parallel reduction for better performance\n");
+    printf("  • Warp Primitives: Hardware-level instructions for efficient communication\n");
+    printf("  • Fused Kernels: Single-pass algorithms that reduce memory access\n");
+    printf("  • Numerical Stability: Subtract max value before exp() to prevent overflow\n");
+    printf("  • Output values sum to 1.0 for each batch element\n");
+    printf("  • Commonly used in neural networks for classification\n");
+    
+    printf("\n📊 Performance Insights:\n");
+    printf("  • Different kernels excel at different data sizes\n");
+    printf("  • Memory bandwidth utilization is key to performance\n");
+    printf("  • Fused kernels often provide the best overall performance\n");
+    printf("  • Choose kernel based on your specific data size and requirements\n");
+    
+    printf("\n=== All Test Cases Complete ===\n");
     return 0;
 }
