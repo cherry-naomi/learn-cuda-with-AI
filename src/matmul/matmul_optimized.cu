@@ -144,52 +144,61 @@ __global__ void sgemm_shared_memory(int M, int N, int K, float alpha, const floa
 }
 
 // ============================================================================
-// KERNEL 4: 1D BLOCK TILING
+// KERNEL 4: 1D BLOCK TILING (Thread-level register tiling with larger blocks)
 // ============================================================================
-template<int BM, int BN, int BK>
+template<int BM, int BN, int BK, int TM>
 __global__ void sgemm_1d_tiling(int M, int N, int K, float alpha, const float *A,
                                 const float *B, float beta, float *C) {
-    const int tx = threadIdx.x;
-    const int ty = threadIdx.y;
-    const int bx = blockIdx.x;
-    const int by = blockIdx.y;
+    // Block and thread indices
+    const int cRow = blockIdx.y;
+    const int cCol = blockIdx.x;
+    const int threadRow = threadIdx.x / BN;
+    const int threadCol = threadIdx.x % BN;
     
-    // Shared memory for caching tiles
-    __shared__ float As[BM][BK];
-    __shared__ float Bs[BK][BN];
+    const uint innerColA = threadIdx.x % BK; // warp-level GMEM coalescing
+    const uint innerRowA = threadIdx.x / BK;
+    const uint innerColB = threadIdx.x % BN; // warp-level GMEM coalescing
+    const uint innerRowB = threadIdx.x / BN;
     
-    // Accumulator for this thread's result
-    float acc = 0.0f;
+    // Shared memory for caching tiles (1D indexing for coalesced access)
+    __shared__ float As[BM * BK];
+    __shared__ float Bs[BK * BN];
     
-    // Loop over K dimension in tiles
-    for (int k = 0; k < K; k += BK) {
-        // Load tile of A into shared memory
-        if (bx * BM + tx < M && k + ty < K) {
-            As[tx][ty] = A[(bx * BM + tx) * K + (k + ty)];
-        } else {
-            As[tx][ty] = 0.0f;
-        }
-        
-        // Load tile of B into shared memory
-        if (k + tx < K && by * BN + ty < N) {
-            Bs[tx][ty] = B[(k + tx) * N + (by * BN + ty)];
-        } else {
-            Bs[tx][ty] = 0.0f;
-        }
-        
+    // Create local pointers for the current block
+    const float *A_local = A + cRow * BM * K;                    // row=cRow, col=0
+    const float *B_local = B + cCol * BN;                         // row=0, col=cCol
+    float *C_local = C + cRow * BM * N + cCol * BN;              // row=cRow, col=cCol
+    
+    // Allocate thread-local cache for results in register file
+    float threadResults[TM] = {0.0f};
+    
+    // Outer loop over block tiles
+    for (uint bkIdx = 0; bkIdx < K; bkIdx += BK) {
+        // Populate the SMEM caches
+        As[innerRowA * BK + innerColA] = A_local[innerRowA * K + innerColA];
+        Bs[innerRowB * BN + innerColB] = B_local[innerRowB * N + innerColB];
         __syncthreads();
         
-        // Compute partial dot product
-        for (int i = 0; i < BK; ++i) {
-            acc += As[tx][i] * Bs[i][ty];
-        }
+        // Advance block tile for outer loop
+        A_local += BK;
+        B_local += BK * N;
         
+        // Calculate per-thread results
+        // We make the dotproduct loop the outside loop, which facilitates
+        // reuse of the Bs entry, which we can cache in a tmp var.
+        for (uint dotIdx = 0; dotIdx < BK; ++dotIdx) {
+            float Btmp = Bs[dotIdx * BN + threadCol];
+            for (uint resIdx = 0; resIdx < TM; ++resIdx) {
+                threadResults[resIdx] += As[(threadRow * TM + resIdx) * BK + dotIdx] * Btmp;
+            }
+        }
         __syncthreads();
     }
     
-    // Store result
-    if (bx * BM + tx < M && by * BN + ty < N) {
-        C[(bx * BM + tx) * N + (by * BN + ty)] = alpha * acc + beta * C[(bx * BM + tx) * N + (by * BN + ty)];
+    // Store results from register cache
+    for (uint resIdx = 0; resIdx < TM; ++resIdx) {
+        C_local[(threadRow * TM + resIdx) * N + threadCol] = 
+            alpha * threadResults[resIdx] + beta * C_local[(threadRow * TM + resIdx) * N + threadCol];
     }
 }
 
@@ -768,9 +777,15 @@ void run_matmul_test_case(int test_idx, int M, int N, int K, const GPUInfo& gpu_
         if (results) results->push_back(result);
     }
     
-    // 4. 1D Tiling kernel
+    // 4. 1D Tiling kernel (with thread-level tiling TM=8)
     {
-        float gpu_time = measure_kernel_time_ms(sgemm_1d_tiling<32, 32, 32>, M, N, K, 1.0f, d_A, d_B, 0.0f, d_C, grid, block);
+        const uint BM = 64;
+        const uint BN = 64;
+        const uint BK = 8;
+        const uint TM = 8;        
+        dim3 kernel4_grid(CEIL_DIV(N, BM), CEIL_DIV(M, BN));
+        dim3 kernel4_block((BM*BN) / TM);
+        float gpu_time = measure_kernel_time_ms(sgemm_1d_tiling<BM, BN, BK, TM>, M, N, K, 1.0f, d_A, d_B, 0.0f, d_C, kernel4_grid, kernel4_block);
         
         CUDA_CHECK(cudaMemcpy(h_C_gpu, d_C, C_size, cudaMemcpyDeviceToHost));
         
