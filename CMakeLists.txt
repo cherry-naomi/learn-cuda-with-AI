@@ -31,6 +31,16 @@ endif()
 
 # Compiler flags
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O2")
+
+# Option to enable fast math (trades precision for performance)
+option(USE_FAST_MATH "Enable --use_fast_math for faster math operations (may reduce precision)" OFF)
+
+# Add fast math flag if enabled
+if(USE_FAST_MATH)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --use_fast_math")
+    message(STATUS "Fast math enabled: --use_fast_math")
+endif()
+
 set(CMAKE_CUDA_FLAGS_DEBUG "-g -G")  # Debug flags with device debug info
 set(CMAKE_CUDA_FLAGS_RELEASE "-O3")  # Release optimization
 
@@ -238,6 +248,9 @@ message(STATUS "  make run1-run16   - Run individual examples")
 message(STATUS "  make test         - Run softmax unit tests")
 message(STATUS "  make profile      - Run performance profiling")
 message(STATUS "  make install      - Install to system")
+message(STATUS "")
+message(STATUS "CMake options:")
+message(STATUS "  cmake -DUSE_FAST_MATH=ON ..  - Enable --use_fast_math (faster, less precise)")
 message(STATUS "")
 message(STATUS "Learning path: run3 → run4 → run5 → run6 → run9 → run8 → run1 → run2")
 message(STATUS "Softmax path: run10 → run11")
